@@ -85,7 +85,10 @@ systemd timer 15:45      → tidewise reconcile  结算单 vs 本地 → 日报 
 
 ### 数据口径（`data/`）
 
-- 来源：`akshare.futures_zh_daily_sina(合约)`，约 2018 年起上市的合约；已到期合约下载一次永久缓存。
+- 来源：`akshare.futures_zh_daily_sina(合约)`（约 2018 年起）+ 交易所官方日线回填
+  （`tidewise.data.exchange`：SHFE 2009 年起、CZCE 2010-08-25 起、CFFEX 2010 年起；
+  DCE 官方接口被 WAF 拦截暂缺）。重叠日期以交易所数据为准；CZCE 3 位合约代码按行情日期消歧年份；
+  品种历史代码别名（甲醇 ME→MA）在合并时改写。回填命令 `tidewise data backfill`，断点续传。
 - 主力：合格合约（有行情、未到强制换月日）中，远月持仓量连续 `roll_confirm_days` 日第一则切换；只向远月切；
   当前主力到达「交割月前一月 `force_roll_day` 日」强制切换；当日主力无行情（数据源缺口）不做判定。
 - T 日收盘判定的主力在 T+1 持有；换月价差取判定日两合约收盘价差，加法后复权、锚定最新合约。

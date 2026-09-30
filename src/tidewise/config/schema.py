@@ -148,6 +148,10 @@ class StorageConfig(_Strict):
         return self.root / "bars" / "raw"
 
     @property
+    def exchange_staging_dir(self) -> Path:
+        return self.root / "bars" / "exchange_staging"
+
+    @property
     def continuous_dir(self) -> Path:
         return self.root / "bars" / "continuous"
 

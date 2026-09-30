@@ -109,6 +109,22 @@ class RawBarStore:
         df["date"] = pd.to_datetime(df["date"]).dt.date
         return df
 
+    def merge_exchange(self, product: str, exchange_rows: pd.DataFrame) -> pd.DataFrame:
+        """并入交易所官方日线；重叠 (contract, date) 以交易所数据为准。返回合并后数据。"""
+        if exchange_rows.empty:
+            return self.load(product)
+        existing = self.load(product)
+        # exchange_rows 在前 + keep="first" → 交易所优先
+        merged = (
+            pd.concat([exchange_rows, existing], ignore_index=True)
+            .drop_duplicates(["contract", "date"], keep="first")
+            .sort_values(["contract", "date"])
+            .reset_index(drop=True)
+        )
+        path, _ = self._paths(product)
+        merged.to_parquet(path, index=False)
+        return merged
+
     def update(
         self,
         product: str,
