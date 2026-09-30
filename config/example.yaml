@@ -1,0 +1,91 @@
+# Tidewise 示例配置
+# 使用：复制为 config/local.yaml（已 gitignore）后按需修改。
+# 注意：保证金率、手续费为示意值，实盘前必须按期货公司实际收取标准核对。
+# 密钥（CTP 账号/密码/AuthCode、飞书 secret）禁止写在此文件，见 .env.example。
+
+universe:
+  # ---- 黑色 ----
+  - {product: rb, exchange: SHFE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true,
+     commission: {open: {ratio: 0.0001}, close: {ratio: 0.0001}, close_today: {ratio: 0.0001}}}
+  - {product: i,  exchange: DCE,  multiplier: 100, price_tick: 0.5, margin_ratio: 0.13, night_session: true,
+     commission: {open: {ratio: 0.0001}, close: {ratio: 0.0001}, close_today: {ratio: 0.0001}}}
+  # ---- 有色 ----
+  - {product: al, exchange: SHFE, multiplier: 5,   price_tick: 5,   margin_ratio: 0.10, night_session: true,
+     commission: {open: {per_lot: 3}, close: {per_lot: 3}, close_today: {per_lot: 3}}}
+  - {product: cu, exchange: SHFE, multiplier: 5,   price_tick: 10,  margin_ratio: 0.10, night_session: true,
+     enabled: false,  # 一手保证金约 4 万，资金较小时关闭
+     commission: {open: {ratio: 0.00005}, close: {ratio: 0.00005}, close_today: {ratio: 0.0001}}}
+  # ---- 能化 ----
+  - {product: MA, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true,
+     commission: {open: {per_lot: 2}, close: {per_lot: 2}, close_today: {per_lot: 6}}}
+  - {product: TA, exchange: CZCE, multiplier: 5,   price_tick: 2,   margin_ratio: 0.10, night_session: true,
+     commission: {open: {per_lot: 3}, close: {per_lot: 3}}}
+  # ---- 农产品 ----
+  - {product: m,  exchange: DCE,  multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true,
+     commission: {open: {per_lot: 1.5}, close: {per_lot: 1.5}}}
+  - {product: y,  exchange: DCE,  multiplier: 10,  price_tick: 2,   margin_ratio: 0.10, night_session: true,
+     commission: {open: {per_lot: 2.5}, close: {per_lot: 2.5}}}
+  - {product: SR, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true,
+     commission: {open: {per_lot: 3}, close: {per_lot: 3}}}
+  - {product: CF, exchange: CZCE, multiplier: 5,   price_tick: 5,   margin_ratio: 0.10, night_session: true,
+     commission: {open: {per_lot: 4.3}, close: {per_lot: 4.3}}}
+  - {product: jd, exchange: DCE,  multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: false,
+     commission: {open: {ratio: 0.00015}, close: {ratio: 0.00015}, close_today: {ratio: 0.00015}}}
+  - {product: AP, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.12, night_session: false,
+     commission: {open: {per_lot: 5}, close: {per_lot: 5}, close_today: {per_lot: 20}}}
+
+data:
+  source: akshare_sina     # 新浪逐合约日线，约 2018 年起
+  history_start_year: 2018
+  roll_confirm_days: 3     # 远月持仓量连续 N 日第一才换月
+  force_roll_day: 15       # 交割月前一个月的该日强制换月
+
+strategy:
+  name: ewmac_trend
+  params:
+    fast_span: 16          # 支持 (8,32)(16,64)(32,128)(64,256) 等 Carver 标准组合
+    slow_span: 64
+
+sizing:
+  # 单品种在平均信号强度下的年化资金波动占权益比例。
+  # 约等于 组合目标波动 × 品种权重 × 分散乘数，如 25% × 1/11 × 2 ≈ 4.5%
+  instrument_vol_target: 0.04
+  vol_lookback_days: 25
+  buffer_fraction: 0.1     # 持仓缓冲：偏离不足 10% 平均仓位不交易，降低换手
+
+backtest:
+  start: 2019-06-01        # 之前的数据用于信号预热
+  capital: 300000
+  slippage_ticks: 1        # 每手单边滑点（跳）
+
+risk:
+  max_margin_usage: 0.40
+  max_instrument_margin: 0.10
+  max_lots_per_leg: 20
+  daily_loss_halt: 0.03
+  drawdown_halt: 0.15
+  max_cancels_per_day: 100
+
+execution:
+  night_window: "21:05"
+  day_window: "09:05"
+  order_timeout_s: 15
+  max_chase: 3
+  chase_ticks: 1
+
+approval:
+  mode: manual
+
+broker:
+  kind: sim               # 仿真/实盘改为 ctp 并填写下方字段
+  # broker_id: "9999"
+  # td_address: "tcp://..."
+  # md_address: "tcp://..."
+  # app_id: "..."
+  # environment: simulation
+
+storage:
+  root: var
+
+notify:
+  kind: console           # 飞书：kind: feishu + feishu_chat_id
