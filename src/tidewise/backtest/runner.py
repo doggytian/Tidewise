@@ -9,8 +9,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time
 from pathlib import Path
 
@@ -24,7 +25,10 @@ from vnpy_portfoliostrategy import BacktestingEngine
 from tidewise.config.schema import AppConfig, InstrumentConfig
 from tidewise.data.pipeline import CarryStore, ContinuousStore
 from tidewise.strategy.ensemble import CarryState
+from tidewise.strategy.ewmac import AVG_ABS_FORECAST, optimal_position
 from tidewise.strategy.trend import EwmacTrendStrategy
+
+log = logging.getLogger(__name__)
 
 BAR_TIME = time(15, 0)
 
@@ -88,6 +92,7 @@ class BacktestResult:
     trading_start: date
     end: date
     trades: pd.DataFrame  # date, vt_symbol, direction, offset, price, volume
+    excluded_instruments: list[str] = field(default_factory=list)
 
 
 def _instrument_cost(
@@ -110,7 +115,33 @@ def run_backtest(cfg: AppConfig, products: list[str] | None = None) -> BacktestR
     instruments = cfg.instruments(products)
     store = ContinuousStore(cfg.storage.continuous_dir)
     carry_store = CarryStore(cfg.storage.carry_dir)
-    frames = {i.continuous_vt_symbol: store.load(i.product) for i in instruments}
+
+    # 小资金筛选：平均信号（forecast=10）下不足 min_avg_lots 手的品种无法表达仓位，剔除
+    frames_all = {i.continuous_vt_symbol: store.load(i.product) for i in instruments}
+    excluded: list[str] = []
+    kept = []
+    for i in instruments:
+        df = frames_all[i.continuous_vt_symbol]
+        diffs = df["close"].diff().dropna().iloc[-250:]
+        vol_pts = float(diffs.std()) if len(diffs) >= 30 else float("nan")
+        if vol_pts > 0:
+            avg_lots = optimal_position(
+                AVG_ABS_FORECAST,
+                vol_pts,
+                i.multiplier,
+                cfg.backtest.capital,
+                cfg.sizing.instrument_vol_target,
+            )
+            if abs(avg_lots) < cfg.sizing.min_avg_lots:
+                excluded.append(f"{i.product}（平均信号仅 {avg_lots:.2f} 手）")
+                continue
+        kept.append(i)
+    if excluded:
+        log.warning("小资金筛选剔除: %s", "; ".join(excluded))
+    if not kept:
+        raise ValueError(f"全部品种被小资金筛选剔除: {excluded}")
+    instruments = kept
+    frames = {i.continuous_vt_symbol: frames_all[i.continuous_vt_symbol] for i in instruments}
     carry_series: dict[str, dict] = {}
     for i in instruments:
         try:
@@ -162,8 +193,12 @@ def run_backtest(cfg: AppConfig, products: list[str] | None = None) -> BacktestR
             "warmup_days": warmup_days,
             "max_margin_usage": cfg.risk.max_margin_usage,
             "max_instrument_margin": cfg.risk.max_instrument_margin,
+            "max_cluster_margin": cfg.risk.max_cluster_margin,
+            "portfolio_vol_target": cfg.portfolio.annual_vol_target,
+            "portfolio_vol_lookback": cfg.portfolio.realized_vol_lookback,
             "carry_series": carry_series,
             "margin_ratios": {i.continuous_vt_symbol: i.margin_ratio for i in instruments},
+            "clusters": {i.continuous_vt_symbol: i.cluster for i in instruments},
         },
     )
     engine.load_data()
@@ -197,7 +232,9 @@ def run_backtest(cfg: AppConfig, products: list[str] | None = None) -> BacktestR
         ],
         columns=["date", "vt_symbol", "direction", "offset", "price", "volume"],
     )
-    return BacktestResult(stats, daily, roll_cost, roll_count, costs, trading_start, end, trades)
+    return BacktestResult(
+        stats, daily, roll_cost, roll_count, costs, trading_start, end, trades, excluded
+    )
 
 
 def _roll_costs(
@@ -267,9 +304,14 @@ def write_report(result: BacktestResult, out_dir: Path, label: str) -> Path:
         f"| {c.vt_symbol} | {c.multiplier:g} | {c.price_tick:g} | {c.rate:.6f} | {c.slippage:g} |"
         for c in result.costs.values()
     ]
+    if result.excluded_instruments:
+        lines += ["", "## 小资金筛选剔除", ""]
+        lines += [f"- {x}" for x in result.excluded_instruments]
     lines += [
         "",
-        "> 统计已扣除换月成本。数据源为新浪逐合约日线，主力按持仓量规则自行判定，加法后复权。",
+        "> 统计已扣除换月成本。数据源为新浪逐合约日线 + 交易所官方日线回填，"
+        "主力按持仓量规则自行判定，加法后复权。信号=多速度EWMAC×1.25与carry加权（60/40），"
+        "波动率定仓+持仓缓冲+保证金分层上限+组合波动率目标。",
     ]
     md = base.with_suffix(".md")
     md.write_text("\n".join(lines) + "\n", encoding="utf-8")

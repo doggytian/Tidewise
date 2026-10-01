@@ -5,33 +5,33 @@
 
 universe:
   # ---- 黑色 ----
-  - {product: rb, exchange: SHFE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true,
+  - {product: rb, exchange: SHFE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true, cluster: black,
      commission: {open: {ratio: 0.0001}, close: {ratio: 0.0001}, close_today: {ratio: 0.0001}}}
-  - {product: i,  exchange: DCE,  multiplier: 100, price_tick: 0.5, margin_ratio: 0.13, night_session: true,
+  - {product: i,  exchange: DCE,  multiplier: 100, price_tick: 0.5, margin_ratio: 0.13, night_session: true, cluster: black,
      commission: {open: {ratio: 0.0001}, close: {ratio: 0.0001}, close_today: {ratio: 0.0001}}}
   # ---- 有色 ----
-  - {product: al, exchange: SHFE, multiplier: 5,   price_tick: 5,   margin_ratio: 0.10, night_session: true,
+  - {product: al, exchange: SHFE, multiplier: 5,   price_tick: 5,   margin_ratio: 0.10, night_session: true, cluster: metal,
      commission: {open: {per_lot: 3}, close: {per_lot: 3}, close_today: {per_lot: 3}}}
-  - {product: cu, exchange: SHFE, multiplier: 5,   price_tick: 10,  margin_ratio: 0.10, night_session: true,
+  - {product: cu, exchange: SHFE, multiplier: 5,   price_tick: 10,  margin_ratio: 0.10, night_session: true, cluster: metal,
      enabled: false,  # 一手保证金约 4 万，资金较小时关闭
      commission: {open: {ratio: 0.00005}, close: {ratio: 0.00005}, close_today: {ratio: 0.0001}}}
   # ---- 能化 ----
-  - {product: MA, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true,
+  - {product: MA, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true, cluster: chem,
      commission: {open: {per_lot: 2}, close: {per_lot: 2}, close_today: {per_lot: 6}}}
-  - {product: TA, exchange: CZCE, multiplier: 5,   price_tick: 2,   margin_ratio: 0.10, night_session: true,
+  - {product: TA, exchange: CZCE, multiplier: 5,   price_tick: 2,   margin_ratio: 0.10, night_session: true, cluster: chem,
      commission: {open: {per_lot: 3}, close: {per_lot: 3}}}
   # ---- 农产品 ----
-  - {product: m,  exchange: DCE,  multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true,
+  - {product: m,  exchange: DCE,  multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true, cluster: oils,
      commission: {open: {per_lot: 1.5}, close: {per_lot: 1.5}}}
-  - {product: y,  exchange: DCE,  multiplier: 10,  price_tick: 2,   margin_ratio: 0.10, night_session: true,
+  - {product: y,  exchange: DCE,  multiplier: 10,  price_tick: 2,   margin_ratio: 0.10, night_session: true, cluster: oils,
      commission: {open: {per_lot: 2.5}, close: {per_lot: 2.5}}}
-  - {product: SR, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true,
+  - {product: SR, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: true, cluster: soft,
      commission: {open: {per_lot: 3}, close: {per_lot: 3}}}
-  - {product: CF, exchange: CZCE, multiplier: 5,   price_tick: 5,   margin_ratio: 0.10, night_session: true,
+  - {product: CF, exchange: CZCE, multiplier: 5,   price_tick: 5,   margin_ratio: 0.10, night_session: true, cluster: soft,
      commission: {open: {per_lot: 4.3}, close: {per_lot: 4.3}}}
-  - {product: jd, exchange: DCE,  multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: false,
+  - {product: jd, exchange: DCE,  multiplier: 10,  price_tick: 1,   margin_ratio: 0.10, night_session: false, cluster: soft,
      commission: {open: {ratio: 0.00015}, close: {ratio: 0.00015}, close_today: {ratio: 0.00015}}}
-  - {product: AP, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.12, night_session: false,
+  - {product: AP, exchange: CZCE, multiplier: 10,  price_tick: 1,   margin_ratio: 0.12, night_session: false, cluster: soft,
      commission: {open: {per_lot: 5}, close: {per_lot: 5}, close_today: {per_lot: 20}}}
 
 data:

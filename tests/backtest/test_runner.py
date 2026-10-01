@@ -91,30 +91,30 @@ def test_fills_at_next_open(cfg):
 def test_matches_independent_simulation(cfg):
     """vn.py 回测毛盈亏与独立纯 Python 模拟逐日一致（防框架口径漂移）。
 
-    复刻策略的完整决策链：多速度 EWMAC + carry 合成 → 波动率定仓 → 持仓缓冲 → 保证金上限。
-    合成数据下保证金上限不触发（仓位 ≤ 2 手），故此处可不复刻组合层缩减。
+    复刻策略的完整决策链：多速度 EWMAC + carry 合成 → 波动率定仓 × 组合波动 scalar
+    → 持仓缓冲 → 保证金上限。
     """
+    from tidewise.portfolio import cap_by_margins, vol_scalar
     from tidewise.strategy.ensemble import CarryState, EwmacEnsembleState, combine_forecasts
     from tidewise.strategy.ewmac import buffered_target, optimal_position
 
     result = run_backtest(cfg, ["rb"])
     df = ContinuousStore(cfg.storage.continuous_dir).load("rb")
-    carry = dict(
-        zip(
-            CarryStore(cfg.storage.carry_dir).load("rb")["date"],
-            CarryStore(cfg.storage.carry_dir).load("rb")["carry"],
-            strict=True,
-        )
-    )
-    sz, s, rk = cfg.sizing, cfg.backtest, cfg.risk
+    carry_df = CarryStore(cfg.storage.carry_dir).load("rb")
+    carry = dict(zip(carry_df["date"], carry_df["carry"], strict=True))
+    sz, s, rk, pf = cfg.sizing, cfg.backtest, cfg.risk, cfg.portfolio
     trend = EwmacEnsembleState(sz.vol_lookback_days)
     carry_state = CarryState()
     warm = int((df["date"] < result.trading_start).sum())
     pos, pending, prev, pnl = 0, None, 0.0, {}
+    daily_pnls: list[float] = []
     for i, b in enumerate(df.itertuples(index=False)):
         trade = pending - pos if pending is not None else 0
-        pnl[b.date] = ((pos * (b.close - prev)) if i else 0.0) + trade * (b.close - b.open)
+        day_pnl = ((pos * (b.close - prev)) if i else 0.0) + trade * (b.close - b.open)
+        pnl[b.date] = day_pnl
+        daily_pnls.append(day_pnl * 10)
         pos += trade
+        scalar = vol_scalar(daily_pnls, s.capital, pf.annual_vol_target, pf.realized_vol_lookback)
         t = trend.update(b.close)
         c_v = carry.get(b.date)
         c = carry_state.update(c_v) if c_v is not None else None
@@ -123,17 +123,28 @@ def test_matches_independent_simulation(cfg):
         if f is not None:
             args = (trend.daily_vol, 10, s.capital, sz.instrument_vol_target)
             target = buffered_target(
-                optimal_position(f, *args), pos, optimal_position(10, *args), sz.buffer_fraction
+                optimal_position(f, *args) * scalar,
+                pos,
+                optimal_position(10, *args),
+                sz.buffer_fraction,
             )
-            per_lot = b.close * 10 * 0.10  # rb 保证金率
-            limit = int(s.capital * rk.max_instrument_margin / per_lot)
-            target = max(-limit, min(limit, target))
-            assert abs(target) * per_lot <= s.capital * rk.max_margin_usage
+            target = cap_by_margins(
+                {"rb888.SHFE": target},
+                {"rb888.SHFE": b.close},
+                {"rb888.SHFE": 10},
+                {"rb888.SHFE": 0.10},
+                {"rb888.SHFE": "black"},
+                s.capital,
+                rk.max_instrument_margin,
+                rk.max_cluster_margin,
+                rk.max_margin_usage,
+            )["rb888.SHFE"]
         pending = target if i >= warm else None
         prev = b.close
     ref = pd.Series(pnl) * 10
     vn = result.daily["total_pnl"]
     assert (ref.reindex(vn.index) - vn).abs().max() == pytest.approx(0, abs=1e-6)
+    # 组合波动 scalar 与保证金上限的缩减路径由 tests/test_portfolio.py 单独覆盖
 
 
 def test_warmup_insufficient(cfg, example_raw, tmp_path):

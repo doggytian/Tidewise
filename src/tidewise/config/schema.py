@@ -40,6 +40,7 @@ class InstrumentConfig(_Strict):
     margin_ratio: float = Field(gt=0, lt=1)
     night_session: bool
     commission: CommissionConfig = CommissionConfig()
+    cluster: str = ""  # 板块（相关性分组），如 black/oils；空 = 独立板块
     enabled: bool = True
 
     @field_validator("exchange")
@@ -83,18 +84,29 @@ class StrategyConfig(_Strict):
 class SizingConfig(_Strict):
     """波动率定仓：平均信号强度下，单品种年化波动（资金）占权益的比例。"""
 
-    instrument_vol_target: float = Field(0.02, gt=0, le=0.2)
+    instrument_vol_target: float = Field(0.025, gt=0, le=0.2)
     vol_lookback_days: int = Field(25, ge=5, le=250)
     buffer_fraction: float = Field(0.1, ge=0, le=0.5)
+    # 小资金筛选：平均信号（forecast=10）下不足该手数的品种停用（强信号时仍应能持 1 手）
+    min_avg_lots: float = Field(0.25, gt=0, le=2)
 
 
 class RiskConfig(_Strict):
     max_margin_usage: float = Field(0.4, gt=0, le=0.9)
     max_instrument_margin: float = Field(0.1, gt=0, le=0.5)
+    max_cluster_margin: float = Field(0.15, gt=0, le=0.5)  # 同板块品种合计保证金上限
     max_lots_per_leg: int = Field(20, ge=1)
     daily_loss_halt: float = Field(0.03, gt=0, le=0.2)
     drawdown_halt: float = Field(0.15, gt=0, le=0.5)
     max_cancels_per_day: int = Field(100, ge=1)
+
+
+class PortfolioConfig(_Strict):
+    """组合层波动率目标：按策略自身近期盈亏波动缩减整体仓位（Carver vol scalar）。"""
+
+    annual_vol_target: float = Field(0.10, gt=0, le=0.5)
+    realized_vol_lookback: int = Field(25, ge=5, le=120)
+    max_scalar: float = Field(1.0, gt=0, le=1.0)  # 只缩减不放大的上限
 
 
 class ExecutionConfig(_Strict):
@@ -189,6 +201,7 @@ class AppConfig(_Strict):
     strategy: StrategyConfig = StrategyConfig()
     sizing: SizingConfig = SizingConfig()
     risk: RiskConfig = RiskConfig()
+    portfolio: PortfolioConfig = PortfolioConfig()
     execution: ExecutionConfig = ExecutionConfig()
     backtest: BacktestConfig = BacktestConfig()
     approval: ApprovalConfig = ApprovalConfig()
@@ -210,6 +223,10 @@ class AppConfig(_Strict):
     def _consistency(self) -> AppConfig:
         if self.risk.max_instrument_margin > self.risk.max_margin_usage:
             raise ValueError("risk.max_instrument_margin 不能大于 risk.max_margin_usage")
+        if self.risk.max_cluster_margin > self.risk.max_margin_usage:
+            raise ValueError("risk.max_cluster_margin 不能大于 risk.max_margin_usage")
+        if self.risk.max_cluster_margin < self.risk.max_instrument_margin:
+            raise ValueError("risk.max_cluster_margin 不能小于 risk.max_instrument_margin")
         if not any(i.enabled for i in self.universe):
             raise ValueError("universe 中至少需要一个 enabled 品种")
         if self.backtest.end and self.backtest.end <= self.backtest.start:
