@@ -65,6 +65,11 @@ class EwmacState:
     """逐根推进的增量状态。update() 只依赖已推入的数据，不存在未来函数。"""
 
     params: EwmacParams
+
+    @classmethod
+    def from_spans(cls, fast_span: int, slow_span: int, vol_lookback: int = 25) -> EwmacState:
+        return cls(EwmacParams(fast_span, slow_span, vol_lookback))
+
     count: int = 0
     ema_fast: float = math.nan
     ema_slow: float = math.nan

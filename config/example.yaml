@@ -41,15 +41,13 @@ data:
   force_roll_day: 15       # 交割月前一个月的该日强制换月
 
 strategy:
-  name: ewmac_trend
-  params:
-    fast_span: 16          # 支持 (8,32)(16,64)(32,128)(64,256) 等 Carver 标准组合
-    slow_span: 64
+  name: ewmac_trend        # 多速度 EWMAC(8/32,16/64,32/128,64/256)×1.25 + carry，权重冻结于代码
+  params: {}
 
 sizing:
   # 单品种在平均信号强度下的年化资金波动占权益比例。
-  # 约等于 组合目标波动 × 品种权重 × 分散乘数，如 25% × 1/11 × 2 ≈ 4.5%
-  instrument_vol_target: 0.04
+  # 组合波动目标 ≈ 品种数 × 平均暴露(0.5) × 单品种目标 / 分散乘数(2) ≈ 11×0.5×0.025/2 ≈ 7%
+  instrument_vol_target: 0.025
   vol_lookback_days: 25
   buffer_fraction: 0.1     # 持仓缓冲：偏离不足 10% 平均仓位不交易，降低换手
 

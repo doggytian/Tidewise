@@ -8,18 +8,28 @@ import pytest
 
 from tidewise.backtest.runner import run_backtest, write_report
 from tidewise.config import parse_config
+from tidewise.data.carry import CarryStore, build_carry
 from tidewise.data.continuous import build_continuous
 from tidewise.data.pipeline import ContinuousStore
 
 
-def _synthetic_raw(days: int = 500, seed: int = 7) -> pd.DataFrame:
+def _synthetic_raw(days: int = 900, seed: int = 7) -> pd.DataFrame:
     """两段趋势 + 噪声；每 120 日换一次合约，远月比近月高 20 点。"""
     rng = np.random.default_rng(seed)
     trend = np.concatenate([np.linspace(0, 600, days // 2), np.linspace(600, 0, days - days // 2)])
     base = 3000 + trend + rng.normal(0, 15, days).cumsum() * 0.3
     start = date(2020, 1, 2)
     dates = [start + timedelta(days=i) for i in range(days)]
-    contracts = ["RB2101", "RB2105", "RB2110", "RB2201", "RB2205"]
+    contracts = [
+        "RB2101",
+        "RB2105",
+        "RB2110",
+        "RB2201",
+        "RB2205",
+        "RB2210",
+        "RB2301",
+        "RB2305",
+    ]
     rows = []
     for i, d in enumerate(dates):
         seg = min(i // 120, len(contracts) - 2)
@@ -44,11 +54,13 @@ def _synthetic_raw(days: int = 500, seed: int = 7) -> pd.DataFrame:
 @pytest.fixture
 def cfg(tmp_path, example_raw):
     example_raw["storage"] = {"root": str(tmp_path)}
-    example_raw["backtest"] = {"start": "2020-06-01", "capital": 300000, "slippage_ticks": 1}
+    example_raw["backtest"] = {"start": "2021-02-01", "capital": 300000, "slippage_ticks": 1}
     example_raw["data"]["force_roll_day"] = 28  # 合成数据按自然日排列，避免强制换月干扰
     c = parse_config(example_raw)
-    df, events = build_continuous("rb", _synthetic_raw(), confirm_days=3, force_roll_day=28)
+    raw = _synthetic_raw()
+    df, events = build_continuous("rb", raw, confirm_days=3, force_roll_day=28)
     ContinuousStore(c.storage.continuous_dir).save("rb", df, events)
+    CarryStore(c.storage.carry_dir).save("rb", build_carry("rb", raw, 3, 28))
     return c
 
 
@@ -56,7 +68,7 @@ def test_backtest_end_to_end(cfg, tmp_path):
     result = run_backtest(cfg, ["rb"])
     s = result.stats
     assert s["total_trade_count"] > 0
-    assert result.trading_start >= date(2020, 6, 1)
+    assert result.trading_start >= date(2021, 2, 1)
     assert result.roll_count > 0 and result.roll_cost_total > 0
     # 净盈亏已扣除换月成本
     assert result.daily["roll_cost"].sum() == pytest.approx(result.roll_cost_total)
@@ -77,31 +89,46 @@ def test_fills_at_next_open(cfg):
 
 
 def test_matches_independent_simulation(cfg):
-    """vn.py 回测毛盈亏与独立纯 Python 模拟逐日一致（防框架口径漂移）。"""
-    from tidewise.strategy.ewmac import (
-        EwmacParams,
-        EwmacState,
-        buffered_target,
-        optimal_position,
-    )
+    """vn.py 回测毛盈亏与独立纯 Python 模拟逐日一致（防框架口径漂移）。
+
+    复刻策略的完整决策链：多速度 EWMAC + carry 合成 → 波动率定仓 → 持仓缓冲 → 保证金上限。
+    合成数据下保证金上限不触发（仓位 ≤ 2 手），故此处可不复刻组合层缩减。
+    """
+    from tidewise.strategy.ensemble import CarryState, EwmacEnsembleState, combine_forecasts
+    from tidewise.strategy.ewmac import buffered_target, optimal_position
 
     result = run_backtest(cfg, ["rb"])
     df = ContinuousStore(cfg.storage.continuous_dir).load("rb")
-    sz, s = cfg.sizing, cfg.backtest
-    state = EwmacState(EwmacParams(16, 64, sz.vol_lookback_days))
+    carry = dict(
+        zip(
+            CarryStore(cfg.storage.carry_dir).load("rb")["date"],
+            CarryStore(cfg.storage.carry_dir).load("rb")["carry"],
+            strict=True,
+        )
+    )
+    sz, s, rk = cfg.sizing, cfg.backtest, cfg.risk
+    trend = EwmacEnsembleState(sz.vol_lookback_days)
+    carry_state = CarryState()
     warm = int((df["date"] < result.trading_start).sum())
     pos, pending, prev, pnl = 0, None, 0.0, {}
     for i, b in enumerate(df.itertuples(index=False)):
         trade = pending - pos if pending is not None else 0
         pnl[b.date] = ((pos * (b.close - prev)) if i else 0.0) + trade * (b.close - b.open)
         pos += trade
-        f = state.update(b.close)
+        t = trend.update(b.close)
+        c_v = carry.get(b.date)
+        c = carry_state.update(c_v) if c_v is not None else None
+        f, _ = combine_forecasts(t, c)
         target = pos
         if f is not None:
-            args = (state.daily_vol, 10, s.capital, sz.instrument_vol_target)
+            args = (trend.daily_vol, 10, s.capital, sz.instrument_vol_target)
             target = buffered_target(
                 optimal_position(f, *args), pos, optimal_position(10, *args), sz.buffer_fraction
             )
+            per_lot = b.close * 10 * 0.10  # rb 保证金率
+            limit = int(s.capital * rk.max_instrument_margin / per_lot)
+            target = max(-limit, min(limit, target))
+            assert abs(target) * per_lot <= s.capital * rk.max_margin_usage
         pending = target if i >= warm else None
         prev = b.close
     ref = pd.Series(pnl) * 10

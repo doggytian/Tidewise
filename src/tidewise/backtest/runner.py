@@ -22,7 +22,8 @@ from vnpy.trader.utility import extract_vt_symbol
 from vnpy_portfoliostrategy import BacktestingEngine
 
 from tidewise.config.schema import AppConfig, InstrumentConfig
-from tidewise.data.pipeline import ContinuousStore
+from tidewise.data.pipeline import CarryStore, ContinuousStore
+from tidewise.strategy.ensemble import CarryState
 from tidewise.strategy.trend import EwmacTrendStrategy
 
 BAR_TIME = time(15, 0)
@@ -108,7 +109,15 @@ def _instrument_cost(
 def run_backtest(cfg: AppConfig, products: list[str] | None = None) -> BacktestResult:
     instruments = cfg.instruments(products)
     store = ContinuousStore(cfg.storage.continuous_dir)
+    carry_store = CarryStore(cfg.storage.carry_dir)
     frames = {i.continuous_vt_symbol: store.load(i.product) for i in instruments}
+    carry_series: dict[str, dict] = {}
+    for i in instruments:
+        try:
+            c = carry_store.load(i.product)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"{e}（carry 与连续合约一起由 data update 生成）") from e
+        carry_series[i.continuous_vt_symbol] = dict(zip(c["date"], c["carry"], strict=True))
     costs = {
         i.continuous_vt_symbol: _instrument_cost(
             i, frames[i.continuous_vt_symbol], cfg.backtest.slippage_ticks
@@ -122,11 +131,11 @@ def run_backtest(cfg: AppConfig, products: list[str] | None = None) -> BacktestR
         raise ValueError("无可用数据")
     end = bt.end or all_dates[-1]
     warmup_days = sum(1 for d in all_dates if d < bt.start)
-    params = cfg.strategy.params
-    fast, slow = int(params.get("fast_span", 16)), int(params.get("slow_span", 64))
-    if warmup_days < 2 * slow:
+    # 预热下限 = carry 波动估计窗口；各 EWMAC 速度未就绪时自动被剔除（权重归一）
+    min_warmup = CarryState().min_bars
+    if warmup_days < min_warmup:
         raise ValueError(
-            f"回测起点 {bt.start} 之前只有 {warmup_days} 个交易日，信号预热需要 ≥ {2 * slow} 日；"
+            f"回测起点 {bt.start} 之前只有 {warmup_days} 个交易日，信号预热需要 ≥ {min_warmup} 日；"
             "请推迟 backtest.start 或提前 data.history_start_year"
         )
 
@@ -146,13 +155,15 @@ def run_backtest(cfg: AppConfig, products: list[str] | None = None) -> BacktestR
     engine.add_strategy(
         EwmacTrendStrategy,
         {
-            "fast_span": fast,
-            "slow_span": slow,
             "vol_lookback": cfg.sizing.vol_lookback_days,
             "vol_target": cfg.sizing.instrument_vol_target,
             "buffer_fraction": cfg.sizing.buffer_fraction,
             "capital": bt.capital,
             "warmup_days": warmup_days,
+            "max_margin_usage": cfg.risk.max_margin_usage,
+            "max_instrument_margin": cfg.risk.max_instrument_margin,
+            "carry_series": carry_series,
+            "margin_ratios": {i.continuous_vt_symbol: i.margin_ratio for i in instruments},
         },
     )
     engine.load_data()

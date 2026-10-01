@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from tidewise.config.schema import AppConfig, InstrumentConfig
+from tidewise.data.carry import CarryStore, build_carry
 from tidewise.data.continuous import RollEvent, build_continuous
 from tidewise.data.sina import Fetcher, RawBarStore, UpdateReport, fetch_sina_contract
 
@@ -71,6 +72,10 @@ def update_product(
         inst.product, raw, cfg.data.roll_confirm_days, cfg.data.force_roll_day
     )
     ContinuousStore(cfg.storage.continuous_dir).save(inst.product, df, events)
+    CarryStore(cfg.storage.carry_dir).save(
+        inst.product,
+        build_carry(inst.product, raw, cfg.data.roll_confirm_days, cfg.data.force_roll_day),
+    )
     return ProductDataSummary(
         product=inst.product,
         raw=report,

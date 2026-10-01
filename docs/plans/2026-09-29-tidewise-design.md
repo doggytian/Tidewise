@@ -52,7 +52,7 @@
 | 组合回测、逐日盯市统计 | `vnpy_portfoliostrategy.BacktestingEngine`（仅覆盖 `load_data` 从 Parquet 注入） |
 | 平今平昨、CTP、订单级风控 | `OffsetConverter`、`vnpy_ctp`、`vnpy_riskmanager`（P4） |
 | **自建**：逐合约数据、主力判定、后复权连续 | `tidewise.data` |
-| **自建**：EWMAC 信号 + 波动率定仓 + 持仓缓冲 | `tidewise.strategy.ewmac`（公式参考 Carver 公开著作，未用 pysystemtrade GPL 代码） |
+| **自建**：多速度 EWMAC + carry 合成信号、波动率定仓、持仓缓冲 | `tidewise.strategy.ewmac` / `ensemble`（公式参考 Carver 公开著作，未用 pysystemtrade GPL 代码） |
 | **自建**：换月成本补记 | `tidewise.backtest`（连续合约上无真实换月成交） |
 | **自建**：半自动审批状态机 | `tidewise.plan` |
 | **自建**：账户级熔断、对账、飞书、定时启停 | P4~P5 |
@@ -76,8 +76,8 @@ systemd timer 15:45      → tidewise reconcile  结算单 vs 本地 → 日报 
 |---|---|---|
 | `config/` | YAML schema（未知字段拒绝、密钥字段拒绝）+ 环境变量密钥 | 完成 |
 | `plan.py` | 调仓单状态机（TargetPosition 以 vt_symbol 表示；PlannedOrder 用 vn.py Direction/Offset） | 完成 |
-| `data/` | 新浪逐合约日线（akshare）→ Parquet 增量缓存 → 主力判定 → 加法后复权连续 | 完成 |
-| `strategy/` | `ewmac.py` 纯函数（回测/实盘信号共用）；`trend.py` vn.py 组合策略封装 | 完成 |
+| `data/` | 新浪逐合约日线 + 交易所官方回填 → Parquet 缓存 → 主力判定 → 加法后复权连续 → carry 序列 | 完成 |
+| `strategy/` | `ewmac.py` 单速度信号与定仓纯函数；`ensemble.py` 多速度+carry 合成；`trend.py` vn.py 组合策略封装（含保证金上限） | 完成 |
 | `backtest/` | vn.py 回测 + 换月成本 + 报告；与独立模拟逐日对账的回归测试 | 完成 |
 | `portfolio/` | 账户级风控：保证金占用、单品种上限、回撤熔断、kill switch | P3 |
 | `live/` | 信号任务（连续序列 → 预测 → 主力合约目标手数）、执行任务（vn.py + CTP） | P4 |

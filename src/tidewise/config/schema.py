@@ -156,6 +156,10 @@ class StorageConfig(_Strict):
         return self.root / "bars" / "continuous"
 
     @property
+    def carry_dir(self) -> Path:
+        return self.root / "bars" / "carry"
+
+    @property
     def report_dir(self) -> Path:
         return self.root / "reports"
 

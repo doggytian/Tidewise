@@ -115,7 +115,8 @@ def _cmd_data_backfill(args: argparse.Namespace) -> int:
         )
     if failed:
         return 1
-    # 回填后重建连续合约（不联网，只读本地缓存）
+    # 回填后重建连续合约与 carry（不联网，只读本地缓存）
+    from tidewise.data.carry import CarryStore, build_carry
     from tidewise.data.continuous import build_continuous
     from tidewise.data.pipeline import ContinuousStore
 
@@ -126,6 +127,10 @@ def _cmd_data_backfill(args: argparse.Namespace) -> int:
                 product, raw, cfg.data.roll_confirm_days, cfg.data.force_roll_day
             )
             ContinuousStore(cfg.storage.continuous_dir).save(product, df, events)
+            CarryStore(cfg.storage.carry_dir).save(
+                product,
+                build_carry(product, raw, cfg.data.roll_confirm_days, cfg.data.force_roll_day),
+            )
             first = df["date"].iloc[0] if len(df) else "-"
             last = df["date"].iloc[-1] if len(df) else "-"
             print(f"[OK] {product}: 连续序列 {len(df)} 根 {first} ~ {last}，换月 {len(events)} 次")
