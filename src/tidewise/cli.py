@@ -137,6 +137,48 @@ def _cmd_data_backfill(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_report(args: argparse.Namespace) -> int:
+    cfg = _load(args.config)
+    if cfg is None:
+        return 1
+    from tidewise.data import ContinuousStore
+    from tidewise.live import (
+        PositionsError,
+        build_daily_report,
+        load_positions,
+        render_markdown,
+        save_template,
+    )
+
+    today = date.today()
+    pos_path = cfg.storage.root / "positions.yaml"
+    if not pos_path.exists():
+        contracts = [
+            str(ContinuousStore(cfg.storage.continuous_dir).load(i.product)["contract"].iloc[-1])
+            for i in cfg.instruments()
+        ]
+        save_template(pos_path, today, contracts)
+        print(f"[OK] 已生成持仓模板 {pos_path}，请填入实际持仓（净手数，正=多负=空）后重试")
+        return 0
+    try:
+        positions = load_positions(pos_path)
+    except PositionsError as e:
+        print(f"[FAIL] {e}", file=sys.stderr)
+        return 1
+    try:
+        report = build_daily_report(cfg, positions, today)
+    except FileNotFoundError as e:
+        print(f"[FAIL] {e}", file=sys.stderr)
+        return 1
+    text = render_markdown(report)
+    print(text)
+    out = cfg.storage.report_dir / f"daily-{report.signal_date:%Y%m%d}.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"[OK] 报告已保存: {out}")
+    return 0
+
+
 def _cmd_backtest(args: argparse.Namespace) -> int:
     cfg = _load(args.config)
     if cfg is None:
@@ -192,6 +234,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     bt = with_products(with_config(sub.add_parser("backtest", help="运行回测并生成报告")))
     bt.set_defaults(func=_cmd_backtest)
+
+    rp = with_config(sub.add_parser("report", help="每日决策报告（信号→目标→调仓清单）"))
+    rp.set_defaults(func=_cmd_report)
     return parser
 
 

@@ -16,7 +16,7 @@
 | P1 | 配置与密钥、调仓单状态机 | 完成 |
 | P2 | 数据：新浪逐合约日线 → 主力判定 → 加法后复权连续合约；vn.py 回测 + 换月成本 | 完成 |
 | A | 研究可信化：延长历史、多速度信号 + carry、小资金适配、账户级风控 | 待开始 |
-| B | 每日决策报告（第一个可用交付） | 待开始 |
+| B | 每日决策报告（`tidewise report`） | 完成（控制台/Markdown；飞书推送待接） |
 | C | 前向跟踪 6 个月 | 待开始 |
 | D | 自动执行（可选）：vn.py + CTP | 待开始 |
 
@@ -31,6 +31,7 @@ uv run tidewise config check
 
 uv run tidewise data update -p rb             # 下载单个品种（首次约 1 分钟，之后增量更新只需几秒）
 uv run tidewise data update                   # 下载全部启用品种
+uv run tidewise report                        # 每日决策报告（需先在 var/positions.yaml 填持仓）
 uv run tidewise backtest -p rb                # 单品种回测
 uv run tidewise backtest                      # 组合回测，报告写到 var/reports/
 uv run pytest
@@ -55,7 +56,8 @@ src/tidewise/
   config/    YAML 配置结构、加载器、环境变量密钥
   plan.py    调仓单状态机（半自动审批）
   data/      合约代码规范、新浪数据源与缓存、主力判定与连续合约、数据流水线
-  strategy/  ewmac.py 纯函数信号与定仓；trend.py 基于 vn.py 的组合策略
+  strategy/  ewmac/ensemble 纯函数信号与定仓；trend.py vn.py 组合策略；replay.py 决策链复放
+  live/      持仓文件（positions.yaml）与每日决策报告
   backtest/  vn.py 回测封装、换月成本、报告
   cli.py     命令行入口
 ```

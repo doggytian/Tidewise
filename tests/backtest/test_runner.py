@@ -1,67 +1,14 @@
 """用合成数据端到端跑 vn.py 回测，验证撮合口径、换月成本与报告。"""
 
-from datetime import date, timedelta
+from datetime import date
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from tidewise.backtest.runner import run_backtest, write_report
 from tidewise.config import parse_config
-from tidewise.data.carry import CarryStore, build_carry
-from tidewise.data.continuous import build_continuous
+from tidewise.data.carry import CarryStore
 from tidewise.data.pipeline import ContinuousStore
-
-
-def _synthetic_raw(days: int = 900, seed: int = 7) -> pd.DataFrame:
-    """两段趋势 + 噪声；每 120 日换一次合约，远月比近月高 20 点。"""
-    rng = np.random.default_rng(seed)
-    trend = np.concatenate([np.linspace(0, 600, days // 2), np.linspace(600, 0, days - days // 2)])
-    base = 3000 + trend + rng.normal(0, 15, days).cumsum() * 0.3
-    start = date(2020, 1, 2)
-    dates = [start + timedelta(days=i) for i in range(days)]
-    contracts = [
-        "RB2101",
-        "RB2105",
-        "RB2110",
-        "RB2201",
-        "RB2205",
-        "RB2210",
-        "RB2301",
-        "RB2305",
-    ]
-    rows = []
-    for i, d in enumerate(dates):
-        seg = min(i // 120, len(contracts) - 2)
-        for k, c in enumerate(contracts):
-            price = base[i] + 20 * k
-            oi = 1000 if k == seg + 1 and i % 120 > 100 else (800 if k == seg else 100)
-            rows.append(
-                {
-                    "contract": c,
-                    "date": d,
-                    "open": price,
-                    "high": price + 5,
-                    "low": price - 5,
-                    "close": price,
-                    "volume": 100,
-                    "open_interest": oi,
-                }
-            )
-    return pd.DataFrame(rows)
-
-
-@pytest.fixture
-def cfg(tmp_path, example_raw):
-    example_raw["storage"] = {"root": str(tmp_path)}
-    example_raw["backtest"] = {"start": "2021-02-01", "capital": 300000, "slippage_ticks": 1}
-    example_raw["data"]["force_roll_day"] = 28  # 合成数据按自然日排列，避免强制换月干扰
-    c = parse_config(example_raw)
-    raw = _synthetic_raw()
-    df, events = build_continuous("rb", raw, confirm_days=3, force_roll_day=28)
-    ContinuousStore(c.storage.continuous_dir).save("rb", df, events)
-    CarryStore(c.storage.carry_dir).save("rb", build_carry("rb", raw, 3, 28))
-    return c
 
 
 def test_backtest_end_to_end(cfg, tmp_path):
